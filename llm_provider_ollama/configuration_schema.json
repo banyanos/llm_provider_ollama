@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Ollama Configuration Schema",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "model"
+  ],
+  "properties": {
+    "model": {
+      "type": "string"
+    },
+    "base_url": {
+      "type": "string",
+      "description": "Raw-HTTP endpoint base for /api/chat (plan A.6 D7)"
+    },
+    "temperature": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2
+    },
+    "top_p": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "top_k": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "num_predict": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "repeat_penalty": {
+      "type": "number",
+      "minimum": 0
+    },
+    "num_ctx": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "think": {
+      "type": "boolean"
+    },
+    "reasoning": {
+      "type": "object"
+    },
+    "tools": {
+      "type": "array",
+      "description": "Neutral OpenAI-function tool declarations",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}
