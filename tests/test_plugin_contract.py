@@ -385,3 +385,24 @@ def test_replaces_builtin_protocol():
     from llm_provider_ollama import OllamaProvider
 
     assert OllamaProvider.plugin_metadata()["replaces_protocol"] == "OLLAMA"
+
+
+def test_list_models_uses_native_tags_endpoint():
+    from types import SimpleNamespace
+
+    import httpx
+
+    from llm_provider_ollama import OllamaProvider
+
+    seen = {}
+
+    def _respond(request):
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"models": [{"name": "glm-5.3-flash"}]})
+
+    ctx = SimpleNamespace(
+        http_client=httpx.Client(transport=httpx.MockTransport(_respond)),
+        endpoint="https://ollama.com/v1", credentials={"api_key": "k"}, timeout_seconds=5,
+    )
+    assert OllamaProvider.list_models(ctx) == [{"model_id": "glm-5.3-flash", "name": "glm-5.3-flash"}]
+    assert seen["url"] == "https://ollama.com/api/tags"

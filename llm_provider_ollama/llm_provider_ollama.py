@@ -15,7 +15,12 @@ from typing import Any, Dict, Iterator, List, Optional
 
 import ollama
 import pendulum
-from llm_provider_base import LlmProviderHandler
+from llm_provider_base import (
+    LlmProviderHandler,
+    bearer,
+    endpoint_base,
+    fetch_upstream_models,
+)
 from silvaengine_utility.performance_monitor import performance_monitor
 from silvaengine_utility.serializer import Serializer
 
@@ -91,6 +96,14 @@ class OllamaProvider(LlmProviderHandler):
         "list_models": True,
     }
     default_pool_name = "httpx_llm_ollama"
+
+    @classmethod
+    def list_models(cls, ctx: Any) -> List[Dict[str, str]]:
+        """Ollama model list: ``GET {root}/api/tags`` (``…/v1`` endpoints accepted)."""
+        root = cls._native_root(endpoint_base(ctx, "http://localhost:11434"))
+        return fetch_upstream_models(
+            ctx, f"{root}/api/tags", headers=bearer(ctx), items_key="models", id_key="name",
+        )
 
     def __init__(
         self,
@@ -1034,7 +1047,6 @@ class OllamaProvider(LlmProviderHandler):
                         )
 
                 # Accumulate reasoning text
-                print(thinking_chunk, end="", flush=True)
                 accumulated_reasoning_parts.append(thinking_chunk)
                 accumulated_partial_reasoning_text += thinking_chunk
 
@@ -1104,8 +1116,7 @@ class OllamaProvider(LlmProviderHandler):
                 # Optimized UUID generation
                 message_id = f"msg-ollama-{self.model_setting.get('model')}-{timestamp}-{uuid.uuid4().hex[:8]}"
 
-            # Print out for stream and accumulate in list (performance optimization)
-            print(chunk_content, end="", flush=True)
+            # Accumulate in list (performance optimization)
             accumulated_text_parts.append(chunk_content)
 
             if output_format in ["json_object", "json_schema"]:
