@@ -60,7 +60,7 @@ def format_search_results(results, user_search: str) -> str:
             ]
         )
         if results.links:
-            output.append(f'Links: {", ".join(results.links)}')
+            output.append(f"Links: {', '.join(results.links)}")
         output.append("")
         return "\n".join(output).rstrip()
 
@@ -93,6 +93,7 @@ class OllamaProvider(LlmProviderHandler):
     capabilities = {
         "streaming": True,
         "tools": True,
+        "reasoning": True,
         "list_models": True,
     }
     default_pool_name = "httpx_llm_ollama"
@@ -102,7 +103,11 @@ class OllamaProvider(LlmProviderHandler):
         """Ollama model list: ``GET {root}/api/tags`` (``…/v1`` endpoints accepted)."""
         root = cls._native_root(endpoint_base(ctx, "http://localhost:11434"))
         return fetch_upstream_models(
-            ctx, f"{root}/api/tags", headers=bearer(ctx), items_key="models", id_key="name",
+            ctx,
+            f"{root}/api/tags",
+            headers=bearer(ctx),
+            items_key="models",
+            id_key="name",
         )
 
     def __init__(
@@ -450,6 +455,11 @@ class OllamaProvider(LlmProviderHandler):
             # Return streaming or non-streaming response
             if kwargs["stream"]:
                 chat_params["stream"] = True
+            else:
+                # Ollama /api/chat streams by default — opt out
+                # explicitly (2026-10-19 E2E: without this the NDJSON body
+                # broke the single-JSON parse with "Extra data").
+                chat_params["stream"] = False
 
             if self.logger.isEnabledFor(logging.DEBUG):
                 self.logger.debug(
@@ -478,9 +488,7 @@ class OllamaProvider(LlmProviderHandler):
                                 continue
                             yield json.loads(stripped)
 
-                if self.enable_timeline_log and self.logger.isEnabledFor(
-                    logging.INFO
-                ):
+                if self.enable_timeline_log and self.logger.isEnabledFor(logging.INFO):
                     invoke_end = pendulum.now("UTC")
                     invoke_time = (invoke_end - invoke_start).total_seconds() * 1000
                     elapsed = self._get_elapsed_time()
@@ -724,9 +732,7 @@ class OllamaProvider(LlmProviderHandler):
                                 "function": {
                                     "name": str(function.get("name") or ""),
                                     "arguments": (
-                                        arguments
-                                        if isinstance(arguments, dict)
-                                        else {}
+                                        arguments if isinstance(arguments, dict) else {}
                                     ),
                                 }
                             }
@@ -782,9 +788,7 @@ class OllamaProvider(LlmProviderHandler):
             headers["Authorization"] = f"Bearer {api_key}"
         return headers
 
-    def _http_error(
-        self, status: Optional[int], detail: str
-    ) -> Exception:
+    def _http_error(self, status: Optional[int], detail: str) -> Exception:
         """Adapt a raw-HTTP failure with a duck-typed ``.response`` so the
         adapter's mapping (plan §5.4) classifies it for retry logic."""
         error = Exception(f"Ollama HTTP {status or 'error'}: {detail}")

@@ -31,7 +31,8 @@ def _handler(transport=None, **config_overrides):
     }
     ctx = SimpleNamespace(
         http_client=httpx.Client(
-            transport=transport or httpx.MockTransport(
+            transport=transport
+            or httpx.MockTransport(
                 lambda request: httpx.Response(200, json={"message": {"content": "ok"}})
             )
         ),
@@ -71,19 +72,37 @@ def test_plugin_metadata():
 
 def test_init_requires_pooled_client():
     # 直接构造：ctx 缺 http_client → 构造期 fail-fast（plan §5.2.1）
-    agent = {"instructions": "x", "configuration": {"model": "m", "base_url": "u"}, "llm": {}, "tool_call_role": "tool"}
+    agent = {
+        "instructions": "x",
+        "configuration": {"model": "m", "base_url": "u"},
+        "llm": {},
+        "tool_call_role": "tool",
+    }
     with pytest.raises(Exception, match="ctx.http_client"):
         OllamaProvider(
-            logging.getLogger("k"), agent, ctx=SimpleNamespace(http_client=None, credentials={})
+            logging.getLogger("k"),
+            agent,
+            ctx=SimpleNamespace(http_client=None, credentials={}),
         )
 
 
 def test_init_requires_base_url():
-    agent = {"instructions": "x", "configuration": {"model": "m"}, "llm": {}, "tool_call_role": "tool"}
+    agent = {
+        "instructions": "x",
+        "configuration": {"model": "m"},
+        "llm": {},
+        "tool_call_role": "tool",
+    }
     ctx = SimpleNamespace(
-        http_client=httpx.Client(), credentials={}, endpoint=None,
-        model_identifier="m", options={}, trace_id="t", emit=None,
-        is_cancelled=None, pool_name="httpx_llm_ollama",
+        http_client=httpx.Client(),
+        credentials={},
+        endpoint=None,
+        model_identifier="m",
+        options={},
+        trace_id="t",
+        emit=None,
+        is_cancelled=None,
+        pool_name="httpx_llm_ollama",
     )
     with pytest.raises(Exception, match="base_url"):
         OllamaProvider(logging.getLogger("k"), agent, ctx=ctx)
@@ -116,7 +135,9 @@ def test_invoke_model_raw_http_non_stream():
         )
 
     handler = _handler(transport=httpx.MockTransport(handler_transport))
-    result = handler.invoke_model(**{"input_messages": [{"role": "user", "content": "hi"}], "stream": False})
+    result = handler.invoke_model(
+        **{"input_messages": [{"role": "user", "content": "hi"}], "stream": False}
+    )
 
     assert captured["url"] == "https://ollama.example.com/api/chat"
     assert captured["auth"] == "Bearer sk-ollama"
@@ -152,9 +173,7 @@ def test_invoke_model_raw_http_stream_ndjson():
     handler = _handler(
         transport=httpx.MockTransport(lambda request: httpx.Response(200, content=body))
     )
-    chunks = list(
-        handler.invoke_model(**{"input_messages": [], "stream": True})
-    )
+    chunks = list(handler.invoke_model(**{"input_messages": [], "stream": True}))
     assert len(chunks) == 2
     assert chunks[-1]["done"] is True
     assert chunks[-1]["eval_count"] == 7
@@ -282,9 +301,7 @@ def test_handle_response_empty_retries():
     import unittest.mock as mock
 
     with mock.patch.object(handler, "invoke_model", side_effect=fake_invoke):
-        handler.handle_response(
-            {"message": {"role": "assistant", "content": ""}}, []
-        )
+        handler.handle_response({"message": {"role": "assistant", "content": ""}}, [])
     assert handler.final_output["content"] == "finally"
     assert handler.final_output["usage"]["total_tokens"] == 2
 
@@ -310,7 +327,9 @@ def test_handle_response_plain_answer_usage():
 
 def _emit_capture(handler):
     emitted = []
-    handler.ctx = SimpleNamespace(**{**handler.ctx.__dict__, "emit": lambda c: emitted.append(dict(c))})
+    handler.ctx = SimpleNamespace(
+        **{**handler.ctx.__dict__, "emit": lambda c: emitted.append(dict(c))}
+    )
     return emitted
 
 
@@ -324,9 +343,7 @@ def test_handle_stream_tool_branch_single_turn():
             "message": {
                 "role": "assistant",
                 "content": "ch",
-                "tool_calls": [
-                    {"function": {"name": "lookup", "arguments": {"q": 2}}}
-                ],
+                "tool_calls": [{"function": {"name": "lookup", "arguments": {"q": 2}}}],
             },
             "done": False,
         },
@@ -372,6 +389,7 @@ def test_handle_stream_final_usage_and_finish():
     assert handler.final_output["finish_reason"] == "stop"
     assert handler.final_output["usage"]["total_tokens"] == 7
 
+
 def test_endpoint_normalised_to_native_root():
     """Records saved for the old OLLAMA builtin end in /v1 (plan D8, G3)."""
     from llm_provider_ollama import OllamaProvider
@@ -402,7 +420,38 @@ def test_list_models_uses_native_tags_endpoint():
 
     ctx = SimpleNamespace(
         http_client=httpx.Client(transport=httpx.MockTransport(_respond)),
-        endpoint="https://ollama.com/v1", credentials={"api_key": "k"}, timeout_seconds=5,
+        endpoint="https://ollama.com/v1",
+        credentials={"api_key": "k"},
+        timeout_seconds=5,
     )
-    assert OllamaProvider.list_models(ctx) == [{"model_id": "glm-5.3-flash", "name": "glm-5.3-flash"}]
+    assert OllamaProvider.list_models(ctx) == [
+        {"model_id": "glm-5.3-flash", "name": "glm-5.3-flash"}
+    ]
     assert seen["url"] == "https://ollama.com/api/tags"
+
+
+def test_invoke_model_non_stream_opts_out_of_default_streaming():
+    """Regression (E2E 2026-10-19): Ollama /api/chat streams by default; the
+    non-streaming path must send stream=False or the NDJSON body breaks the
+    single-JSON parse ("Extra data: line 2")."""
+
+    captured = {}
+
+    def transport(request):
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "message": {"role": "assistant", "content": "ok"},
+                "prompt_eval_count": 3,
+                "eval_count": 4,
+                "done": True,
+                "done_reason": "stop",
+            },
+        )
+
+    handler = _handler(transport=httpx.MockTransport(transport))
+    handler.invoke_model(
+        input_messages=[{"role": "user", "content": "hi"}], stream=False
+    )
+    assert captured["body"]["stream"] is False
